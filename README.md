@@ -51,6 +51,46 @@ This is **Version 1** of both the schema and the narration grammar. The goal is 
 
 ---
 
+## Backend Quickstart
+
+The FastAPI backend is located in `backend/` and provides the `/upload-audio` endpoint for sending narration audio and match metadata. It transcribes `.m4a` files using the OpenAI Audio API.
+
+1) Install dependencies:
+
+```bash
+cd backend
+python -m venv .venv && source .venv/bin/activate
+pip install -r requirements.txt
+```
+
+2) Configure environment variables (see `.env.example`):
+
+```bash
+export OPENAI_API_KEY=your_api_key_here
+export TRANSCRIPTION_MODEL=gpt-4o-mini-transcribe
+```
+
+3) Run the server:
+
+```bash
+uvicorn main:app --reload
+```
+
+4) Send a request (example using `curl`):
+
+```bash
+curl -X POST "http://localhost:8000/upload-audio" \
+  -F "audio=@/path/to/file.m4a" \
+  -F "match_id=match-123" \
+  -F "period=1" \
+  -F "team=Blue" \
+  -F "narrator=Coach"
+```
+
+The response returns the raw transcript text and echoes the metadata you provided.
+
+---
+
 ## 3. Data Model – Version 1 Schema
 
 Each **row = one event**.
