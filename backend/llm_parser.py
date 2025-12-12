@@ -162,7 +162,6 @@ def _request_predictions(
 
     response = client.responses.create(
         model=structure_model,
-        response_format={"type": "json_object"},
         input=[
             {"role": "system", "content": [{"type": "text", "text": SYSTEM_PROMPT}]},
             {"role": "user", "content": [{"type": "text", "text": user_prompt}]},
@@ -246,4 +245,3 @@ def _safe_segment_lookup(segments: List[Dict[str, Any]], index: int) -> Dict[str
     if 0 <= index < len(segments):
         return segments[index]
     return {"start": 0.0, "text": ""}
-
