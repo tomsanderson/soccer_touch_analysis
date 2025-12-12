@@ -17,7 +17,7 @@ from .db import (
     list_uploads,
     save_processing_result,
 )
-from .parser import parse_transcript_segments
+from .llm_parser import parse_transcript_segments
 
 load_dotenv()
 

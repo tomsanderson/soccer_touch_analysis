@@ -11,6 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - SQLite persistence layer (matches, uploads, events) with API-generated transcripts/CSVs tracked on disk.
 - Dockerfile/.dockerignore for containerized deployment.
 - Read-only REST endpoints to list uploads, fetch upload details, and retrieve stored match events.
+- LLM-driven parser (`STRUCTURE_MODEL`) with automatic fallback to the legacy grammar parser, plus documented prompt/example and narration test scripts.
 
 ## [v1.0.0] - 2024-12-12
 

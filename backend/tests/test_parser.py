@@ -76,6 +76,23 @@ class ParserSpecTests(unittest.TestCase):
         self.assertEqual(reaction_event["post_loss_outcome"], "won_back_possession_self")
         self.assertEqual(reaction_event["post_loss_effort_intensity"], "high")
 
+    def test_multi_sentence_segment(self) -> None:
+        segments = [
+            {
+                "start": 0.0,
+                "end": 2.0,
+                "text": "Blue 7, first touch high, controlled. Blue 7, two touch pass, safe recycle to center back, completed.",
+            }
+        ]
+
+        events = parser.parse_transcript_segments(
+            segments, match_id="match-2", period="1", offset_seconds=0.0
+        )
+
+        self.assertEqual(len(events), 2)
+        self.assertEqual(events[0]["event_type"], "first_touch")
+        self.assertEqual(events[1]["event_type"], "on_ball_action")
+
 
 if __name__ == "__main__":
     unittest.main()

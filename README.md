@@ -5,7 +5,7 @@ A small personal app to turn **spoken narration of soccer games** into a **struc
 - Input: Voice recording (e.g., iPhone Voice Memos) of you narrating what happens in the game.
 - Processing:
   1. Transcribe audio with the OpenAI Audio API.
-  2. Parse the transcript using a constrained “spoken grammar” into structured events.
+  2. Convert the transcript into structured events with an OpenAI LLM (JSON output), falling back to the legacy grammar parser if needed.
 - Output: CSV/JSON with a **StatsBomb-inspired event schema**, focused on:
   - First-touch quality and outcome  
   - What the player does with the ball  
@@ -32,7 +32,7 @@ This is **Version 1** of both the schema and the narration grammar. The goal is 
 - **Backend** (Python, FastAPI)
   - Endpoint to upload an audio file + some metadata.
   - Calls OpenAI Audio transcription API (model name configurable).
-  - Parses transcript into a list of events using the “V1 Schema & Grammar”.
+  - Sends the transcript + segment metadata to an OpenAI text model that emits StatsBomb-style JSON events (optionally falling back to the strict grammar parser when no model/keys are configured).
   - Returns:
     - CSV download containing all events.
     - Optionally JSON for UI.
@@ -68,6 +68,7 @@ pip install -r requirements.txt
 ```bash
 export OPENAI_API_KEY=your_api_key_here
 export TRANSCRIPTION_MODEL=gpt-4o-mini-transcribe
+export STRUCTURE_MODEL=gpt-4o-mini
 ```
 
 3) Run the server:
@@ -101,6 +102,15 @@ The response returns the raw transcript text and echoes the metadata you provide
   - `GET /uploads` – list recent uploads with metadata and download paths.
   - `GET /uploads/{id}` – fetch transcript, timestamped transcript, and event list for one upload.
   - `GET /matches/{match_id}/events?period=1` – pull every stored event for a specific match (and period, if supplied).
+
+---
+
+## LLM Parser
+
+- The primary parser now calls an OpenAI text model (see `STRUCTURE_MODEL`) to translate transcript segments into structured JSON events. The prompt lives in `backend/llm_parser.py` along with a few-shot example.
+- Each event returned by the model includes the original source phrase plus the StatsBomb-style attributes (e.g., `first_touch_quality`, `action_outcome_detail`). The backend assigns IDs, timestamps, and persists the rows.
+- If an API key or `STRUCTURE_MODEL` is missing—or the call fails—we automatically fall back to the deterministic grammar parser in `backend/parser.py`, ensuring unit tests and offline runs keep working.
+- Example narration scripts live in `docs/test_scripts/` for repeatable round-trip tests.
 
 ---
 

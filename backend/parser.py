@@ -6,7 +6,7 @@ FIRST_TOUCH_RE = re.compile(
     r"^(?P<team>Blue|White)\s+"
     r"(?P<player>[A-Za-z0-9]+)\s+"
     r"first touch\s+"
-    r"(?P<quality>high|medium|low)\s*,\s*"
+    r"(?P<quality>high|medium|low)\s*,?\s*"
     r"(?P<result>controlled|rebound free space|rebound to opponent)\.?$",
     re.IGNORECASE,
 )
@@ -16,15 +16,15 @@ ON_BALL_RE = re.compile(
     r"(?P<player>[A-Za-z0-9]+)\s+"
     r"(?P<touch_count>one|two|three-plus)-touch\s+"
     r"(?P<action>pass|forward ball|service|clearance|shot)"
-    r"\s*,\s*(?P<tail>.+)$",
+    r"\s*,?\s*(?P<tail>.+)$",
     re.IGNORECASE,
 )
 
 POST_LOSS_RE = re.compile(
-    r"^after losing it,\s*"
+    r"^after losing it,?\s*"
     r"(?P<team>Blue|White)\s+"
     r"(?P<player>[A-Za-z0-9]+)\s+"
-    r"(?P<behaviour>immediate press|track runner|token pressure|stops and watches|gives up)\s*,\s*"
+    r"(?P<behaviour>immediate press|track runner|token pressure|stops and watches|gives up)\s*,?\s*"
     r"(?P<outcome_clause>.+)$",
     re.IGNORECASE,
 )
@@ -63,7 +63,7 @@ SPOKEN_NUMBER_MAP = {
 MARKER_PREFIXES = (
     "first half",
     "second half",
-    "mark,",
+    "mark",
 )
 
 
@@ -114,22 +114,24 @@ def parse_transcript_segments(
 
     for raw_segment in segments:
         segment = _to_segment(raw_segment)
-        raw_text = segment.text.strip()
-        if not raw_text:
-            continue
-        normalized = raw_text.lower()
-        if any(normalized.startswith(prefix) for prefix in MARKER_PREFIXES):
-            continue
+        for raw_text in _split_segment_text(segment.text):
+            if not raw_text:
+                continue
+            normalized = _normalize_phrase(raw_text)
+            if not normalized:
+                continue
+            if any(normalized.startswith(prefix) for prefix in MARKER_PREFIXES):
+                continue
 
-        event: Optional[Dict[str, Any]] = None
-        event = _parse_first_touch(state, segment, raw_text, normalized)
-        if event is None:
-            event = _parse_on_ball_action(state, segment, raw_text, normalized)
-        if event is None:
-            event = _parse_post_loss_reaction(state, segment, raw_text, normalized)
+            event: Optional[Dict[str, Any]] = None
+            event = _parse_first_touch(state, segment, raw_text, normalized)
+            if event is None:
+                event = _parse_on_ball_action(state, segment, raw_text, normalized)
+            if event is None:
+                event = _parse_post_loss_reaction(state, segment, raw_text, normalized)
 
-        if event:
-            events.append(event)
+            if event:
+                events.append(event)
 
     return events
 
@@ -329,6 +331,10 @@ def _extract_intent_and_outcome(tail: str) -> Tuple[Optional[str], str]:
     cleaned = tail.strip()
     comma_index = cleaned.find(",")
     if comma_index == -1:
+        for phrase, mapped in PASS_INTENT_MAP.items():
+            if cleaned.startswith(phrase):
+                remainder = cleaned[len(phrase) :].strip(" ,")
+                return mapped, remainder
         return None, cleaned
 
     potential_intent = cleaned[:comma_index].strip().lower()
@@ -349,6 +355,14 @@ def _match_intent_phrase(value: str) -> Optional[str]:
 def _parse_on_ball_outcome(clause: str, action_type: str) -> Dict[str, str]:
     clause = clause.strip()
     clause_lower = clause.lower()
+
+    completion_to_match = re.match(r"^to\s+(?P<target>.+)\s+completed\.?$", clause_lower)
+    if completion_to_match:
+        return {
+            "action_outcome_team": "same_team",
+            "action_outcome_detail": "completed",
+            "next_possession_team": "same_team",
+        }
 
     if COMPLETED_RE.match(clause):
         return {
@@ -462,6 +476,35 @@ def _build_base_event(
         "tags": None,
         "comment": None,
     }
+
+
+def _split_segment_text(text: str) -> List[str]:
+    if not text:
+        return []
+    stripped = text.strip()
+    if not stripped:
+        return []
+    sentences = re.split(r"(?<=[.!?])\s+", stripped)
+    fragments: List[str] = []
+    for candidate in sentences:
+        cleaned = candidate.strip()
+        if not cleaned:
+            continue
+        fragments.append(cleaned)
+    return fragments
+
+
+def _normalize_phrase(text: str) -> str:
+    normalized = text.lower()
+    normalized = normalized.replace("–", "-")
+    normalized = re.sub(r"[,:;]", " ", normalized)
+    normalized = re.sub(r"\s+", " ", normalized)
+    normalized = normalized.strip(" .!?")
+    normalized = re.sub(r"\bone\s+touch\b", "one-touch", normalized)
+    normalized = re.sub(r"\btwo\s+touch\b", "two-touch", normalized)
+    normalized = re.sub(r"\bthree\s+plus\s+touch\b", "three-plus-touch", normalized)
+    normalized = re.sub(r"\bcarry\s+pass\b", "carry then pass", normalized)
+    return normalized.strip()
 
 
 __all__ = ["parse_transcript_segments"]
