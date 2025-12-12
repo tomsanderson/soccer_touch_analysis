@@ -14,7 +14,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - LLM-driven parser (`STRUCTURE_MODEL`) with automatic fallback to the legacy grammar parser, plus documented prompt/example and narration test scripts.
 - `uploads` table now records `parser_used` and `event_count` for auditing which parsing path handled each run.
 
-## [v1.0.0] - 2024-12-12
+## [v1.0.0] - 2025-12-12
 
 ### Added
 - FastAPI backend with `/upload-audio` for `.m4a` narration uploads.
