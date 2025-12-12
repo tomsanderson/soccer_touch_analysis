@@ -162,6 +162,189 @@ def save_processing_result(
                 rows,
             )
 
+def list_uploads(limit: int = 50) -> List[Dict[str, Any]]:
+    with _get_connection() as conn:
+        rows = conn.execute(
+            """
+            SELECT
+                uploads.id,
+                matches.match_key,
+                matches.period,
+                matches.team,
+                matches.narrator,
+                uploads.audio_filename,
+                uploads.transcript_file_path,
+                uploads.events_csv_path,
+                uploads.created_at,
+                COUNT(events.id) as event_count
+            FROM uploads
+            JOIN matches ON uploads.match_id = matches.id
+            LEFT JOIN events ON events.upload_id = uploads.id
+            GROUP BY uploads.id
+            ORDER BY uploads.created_at DESC
+            LIMIT ?
+            """,
+            (limit,),
+        ).fetchall()
+    return [
+        {
+            "id": row[0],
+            "match_key": row[1],
+            "period": row[2],
+            "team": row[3],
+            "narrator": row[4],
+            "audio_filename": row[5],
+            "transcript_file_path": row[6],
+            "events_csv_path": row[7],
+            "created_at": row[8],
+            "event_count": row[9],
+        }
+        for row in rows
+    ]
+
+
+def get_upload(upload_id: int) -> Optional[Dict[str, Any]]:
+    with _get_connection() as conn:
+        row = conn.execute(
+            """
+            SELECT
+                uploads.id,
+                matches.match_key,
+                matches.period,
+                matches.team,
+                matches.narrator,
+                uploads.audio_filename,
+                uploads.transcript_text,
+                uploads.timestamped_transcript_text,
+                uploads.transcript_file_path,
+                uploads.events_csv_path,
+                uploads.created_at
+            FROM uploads
+            JOIN matches ON uploads.match_id = matches.id
+            WHERE uploads.id = ?
+            """,
+            (upload_id,),
+        ).fetchone()
+        if not row:
+            return None
+
+        events = conn.execute(
+            """
+            SELECT
+                event_id,
+                event_type,
+                video_time_s,
+                team,
+                player_id,
+                player_name,
+                player_jersey_number,
+                player_role,
+                possession_id,
+                sequence_id,
+                source_phrase,
+                zone_start,
+                zone_end,
+                tags,
+                comment,
+                first_touch_quality,
+                first_touch_result,
+                possession_after_touch,
+                maintained_possession_bool,
+                on_ball_action_type,
+                touch_count_before_action,
+                carry_flag,
+                pass_intent,
+                action_outcome_team,
+                action_outcome_detail,
+                next_possession_team,
+                trigger_event_id,
+                post_loss_behaviour,
+                post_loss_effort_intensity,
+                post_loss_outcome,
+                post_loss_disruption_rating
+            FROM events
+            WHERE upload_id = ?
+            ORDER BY id ASC
+            """,
+            (upload_id,),
+        ).fetchall()
+
+    return {
+        "id": row[0],
+        "match_key": row[1],
+        "period": row[2],
+        "team": row[3],
+        "narrator": row[4],
+        "audio_filename": row[5],
+        "transcript_text": row[6],
+        "timestamped_transcript_text": row[7],
+        "transcript_file_path": row[8],
+        "events_csv_path": row[9],
+        "created_at": row[10],
+        "events": [_event_from_row(event_row) for event_row in events],
+    }
+
+
+def list_events_for_match(match_key: str, period: Optional[str] = None) -> List[Dict[str, Any]]:
+    query = """
+        SELECT
+            events.event_id,
+            events.event_type,
+            events.video_time_s,
+            events.team,
+            events.player_id,
+            events.player_name,
+            events.player_jersey_number,
+            events.player_role,
+            events.possession_id,
+            events.sequence_id,
+            events.source_phrase,
+            events.zone_start,
+            events.zone_end,
+            events.tags,
+            events.comment,
+            events.first_touch_quality,
+            events.first_touch_result,
+            events.possession_after_touch,
+            events.maintained_possession_bool,
+            events.on_ball_action_type,
+            events.touch_count_before_action,
+            events.carry_flag,
+            events.pass_intent,
+            events.action_outcome_team,
+            events.action_outcome_detail,
+            events.next_possession_team,
+            events.trigger_event_id,
+            events.post_loss_behaviour,
+            events.post_loss_effort_intensity,
+            events.post_loss_outcome,
+            events.post_loss_disruption_rating,
+            matches.period,
+            uploads.created_at
+        FROM events
+        JOIN uploads ON events.upload_id = uploads.id
+        JOIN matches ON uploads.match_id = matches.id
+        WHERE matches.match_key = ?
+    """
+    params: List[Any] = [match_key]
+    if period:
+        query += " AND matches.period = ?"
+        params.append(period)
+    query += " ORDER BY uploads.created_at ASC, events.id ASC"
+
+    with _get_connection() as conn:
+        rows = conn.execute(query, params).fetchall()
+
+    return [
+        {
+            **_event_from_row(row[:31]),
+            "period": row[31],
+            "upload_created_at": row[32],
+        }
+        for row in rows
+    ]
+
+
 
 def _get_connection() -> sqlite3.Connection:
     DB_PATH.parent.mkdir(parents=True, exist_ok=True)
@@ -232,10 +415,58 @@ def _event_row(upload_id: int, event: Dict[str, Any]) -> Tuple[Any, ...]:
     )
 
 
+def _event_from_row(row: Sequence[Any]) -> Dict[str, Any]:
+    return {
+        "event_id": row[0],
+        "event_type": row[1],
+        "video_time_s": row[2],
+        "team": row[3],
+        "player_id": row[4],
+        "player_name": row[5],
+        "player_jersey_number": row[6],
+        "player_role": row[7],
+        "possession_id": row[8],
+        "sequence_id": row[9],
+        "source_phrase": row[10],
+        "zone_start": row[11],
+        "zone_end": row[12],
+        "tags": row[13],
+        "comment": row[14],
+        "first_touch_quality": row[15],
+        "first_touch_result": row[16],
+        "possession_after_touch": row[17],
+        "maintained_possession_bool": _int_to_bool(row[18]),
+        "on_ball_action_type": row[19],
+        "touch_count_before_action": row[20],
+        "carry_flag": _int_to_bool(row[21]),
+        "pass_intent": row[22],
+        "action_outcome_team": row[23],
+        "action_outcome_detail": row[24],
+        "next_possession_team": row[25],
+        "trigger_event_id": row[26],
+        "post_loss_behaviour": row[27],
+        "post_loss_effort_intensity": row[28],
+        "post_loss_outcome": row[29],
+        "post_loss_disruption_rating": row[30],
+    }
+
+
 def _bool_to_int(value: Any) -> Optional[int]:
     if value is None:
         return None
     return 1 if bool(value) else 0
 
 
-__all__ = ["init_db", "save_processing_result"]
+def _int_to_bool(value: Any) -> Optional[bool]:
+    if value is None:
+        return None
+    return bool(value)
+
+
+__all__ = [
+    "init_db",
+    "save_processing_result",
+    "list_uploads",
+    "get_upload",
+    "list_events_for_match",
+]

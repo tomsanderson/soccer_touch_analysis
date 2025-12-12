@@ -10,7 +10,13 @@ from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from openai import APIConnectionError, OpenAI, OpenAIError, RateLimitError
 
-from .db import init_db, save_processing_result
+from .db import (
+    get_upload,
+    init_db,
+    list_events_for_match,
+    list_uploads,
+    save_processing_result,
+)
 from .parser import parse_transcript_segments
 
 load_dotenv()
@@ -124,6 +130,27 @@ async def upload_audio(
     )
 
     return JSONResponse(content=payload)
+
+
+@app.get("/uploads")
+async def list_recent_uploads(limit: int = 50):
+    limit = max(1, min(limit, 200))
+    uploads = list_uploads(limit=limit)
+    return JSONResponse(content={"uploads": uploads})
+
+
+@app.get("/uploads/{upload_id}")
+async def get_upload_details(upload_id: int):
+    upload = get_upload(upload_id)
+    if not upload:
+        raise HTTPException(status_code=404, detail="Upload not found.")
+    return JSONResponse(content=upload)
+
+
+@app.get("/matches/{match_id}/events")
+async def get_match_events(match_id: str, period: Optional[str] = None):
+    events = list_events_for_match(match_key=match_id, period=period)
+    return JSONResponse(content={"events": events})
 
 
 CSV_FIELDS = [

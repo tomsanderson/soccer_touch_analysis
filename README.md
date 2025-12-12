@@ -96,6 +96,11 @@ The response returns the raw transcript text and echoes the metadata you provide
 - Parsed data is stored in a lightweight SQLite database at `data/app.db` (configurable via `DATABASE_PATH`).
 - Timestamped transcript `.txt` files and events `.csv` files live in `generated_transcripts/` and `generated_events/` for easy auditing.
 - These directories are ignored by git so local runs stay clean but can be mounted/preserved when running in Docker.
+- Read/write APIs:
+  - `POST /upload-audio` – process narration (existing flow).
+  - `GET /uploads` – list recent uploads with metadata and download paths.
+  - `GET /uploads/{id}` – fetch transcript, timestamped transcript, and event list for one upload.
+  - `GET /matches/{match_id}/events?period=1` – pull every stored event for a specific match (and period, if supplied).
 
 ---
 
