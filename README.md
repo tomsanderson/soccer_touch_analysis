@@ -91,6 +91,11 @@ The response returns the raw transcript text and echoes the metadata you provide
 
 ---
 
+## Roadmap & Ideas
+
+- Validate the full end-to-end workflow with real 10-minute narrations (Alpha 2 milestone).
+- Explore adding ML-driven intent/entity extraction once we have a vetted corpus of transcripts to reduce strict grammar dependence.
+
 ## 3. Data Model – Version 1 Schema
 
 Each **row = one event**.
