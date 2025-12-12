@@ -169,8 +169,8 @@ def _request_predictions(
     response = client.responses.create(
         model=structure_model,
         input=[
-            {"role": "system", "content": [{"type": "text", "text": SYSTEM_PROMPT}]},
-            {"role": "user", "content": [{"type": "text", "text": user_prompt}]},
+            {"role": "system", "content": [{"type": "input_text", "text": SYSTEM_PROMPT}]},
+            {"role": "user", "content": [{"type": "input_text", "text": user_prompt}]},
         ],
     )
     content = _extract_response_text(response)
