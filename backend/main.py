@@ -1,9 +1,10 @@
-from fastapi import FastAPI, File, Form, HTTPException, UploadFile
-from fastapi.responses import JSONResponse
-from openai import OpenAI
+import io
 import os
 from typing import Optional
-import io
+
+from fastapi import FastAPI, File, Form, HTTPException, UploadFile
+from fastapi.responses import JSONResponse
+from openai import APIConnectionError, OpenAI, OpenAIError, RateLimitError
 
 app = FastAPI(title="Soccer Touch Analysis Backend")
 
@@ -33,6 +34,9 @@ async def upload_audio(
     if not audio.filename.lower().endswith(".m4a"):
         raise HTTPException(status_code=400, detail="Only .m4a audio files are supported.")
 
+    if audio.content_type and not audio.content_type.startswith("audio"):
+        raise HTTPException(status_code=400, detail="Uploaded file must be an audio file.")
+
     audio_bytes = await audio.read()
     if not audio_bytes:
         raise HTTPException(status_code=400, detail="Uploaded audio file is empty.")
@@ -42,11 +46,26 @@ async def upload_audio(
     audio_stream = io.BytesIO(audio_bytes)
     audio_stream.name = audio.filename
 
-    transcript_response = client.audio.transcriptions.create(
-        model=transcription_model,
-        file=audio_stream,
-        response_format="json",
-    )
+    try:
+        transcript_response = client.audio.transcriptions.create(
+            model=transcription_model,
+            file=audio_stream,
+            response_format="json",
+        )
+    except (RateLimitError, APIConnectionError) as exc:
+        raise HTTPException(
+            status_code=503,
+            detail="Transcription service temporarily unavailable. Please try again later.",
+        ) from exc
+    except OpenAIError as exc:
+        status_code = getattr(exc, "status_code", 500) or 500
+        detail = getattr(exc, "message", str(exc))
+        raise HTTPException(
+            status_code=status_code,
+            detail=f"Transcription failed: {detail}",
+        ) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail="Unexpected error during transcription.") from exc
 
     transcript_text = transcript_response.text
 
