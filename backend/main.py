@@ -132,6 +132,7 @@ async def upload_audio(
         ),
         events_csv_path=str(EVENTS_DIR / csv_filename) if csv_filename else None,
         events=events,
+        parser_used=parser_used,
     )
 
     return JSONResponse(content=payload)

@@ -87,6 +87,7 @@ def save_processing_result(
     transcript_file_path: Optional[str],
     events_csv_path: Optional[str],
     events: Sequence[Dict[str, Any]],
+    parser_used: str,
 ) -> None:
     """Persist the upload metadata and parsed events for later querying."""
     with _get_connection() as conn:
@@ -105,8 +106,10 @@ def save_processing_result(
                 transcript_text,
                 timestamped_transcript_text,
                 transcript_file_path,
-                events_csv_path
-            ) VALUES (?, ?, ?, ?, ?, ?)
+                events_csv_path,
+                parser_used,
+                event_count
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 match_id,
@@ -115,6 +118,8 @@ def save_processing_result(
                 timestamped_transcript_text,
                 transcript_file_path,
                 events_csv_path,
+                parser_used,
+                len(events),
             ),
         ).lastrowid
 
@@ -176,6 +181,8 @@ def list_uploads(limit: int = 50) -> List[Dict[str, Any]]:
                 uploads.transcript_file_path,
                 uploads.events_csv_path,
                 uploads.created_at,
+                uploads.parser_used,
+                uploads.event_count,
                 COUNT(events.id) as event_count
             FROM uploads
             JOIN matches ON uploads.match_id = matches.id
@@ -197,7 +204,8 @@ def list_uploads(limit: int = 50) -> List[Dict[str, Any]]:
             "transcript_file_path": row[6],
             "events_csv_path": row[7],
             "created_at": row[8],
-            "event_count": row[9],
+            "parser_used": row[9],
+            "event_count": row[10],
         }
         for row in rows
     ]
@@ -218,7 +226,9 @@ def get_upload(upload_id: int) -> Optional[Dict[str, Any]]:
                 uploads.timestamped_transcript_text,
                 uploads.transcript_file_path,
                 uploads.events_csv_path,
-                uploads.created_at
+                uploads.created_at,
+                uploads.parser_used,
+                uploads.event_count
             FROM uploads
             JOIN matches ON uploads.match_id = matches.id
             WHERE uploads.id = ?
@@ -281,8 +291,10 @@ def get_upload(upload_id: int) -> Optional[Dict[str, Any]]:
         "transcript_file_path": row[8],
         "events_csv_path": row[9],
         "created_at": row[10],
+        "parser_used": row[11],
+        "event_count": row[12],
         "events": [_event_from_row(event_row) for event_row in events],
-    }
+   }
 
 
 def list_events_for_match(match_key: str, period: Optional[str] = None) -> List[Dict[str, Any]]:
