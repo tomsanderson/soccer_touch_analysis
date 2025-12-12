@@ -23,7 +23,7 @@ class LLMEventPrediction(BaseModel):
         Literal["one_touch", "two_touch", "three_plus"]
     ] = None
     on_ball_action_type: Optional[
-        Literal["pass", "forward_ball", "service", "clearance", "shot"]
+        Literal["pass", "forward_ball", "service", "clearance", "shot", "carry", "carry_pass"]
     ] = None
     carry_flag: Optional[bool] = None
     pass_intent: Optional[
@@ -102,4 +102,3 @@ class LLMEventPrediction(BaseModel):
         if isinstance(value, str):
             return value.strip()
         return value
-

@@ -208,6 +208,12 @@ def _build_events_from_predictions(
         segment = _safe_segment_lookup(segments, prediction.segment_index)
         video_time = float(segment.get("start", 0.0)) + offset_seconds
         source_phrase = prediction.source_phrase or str(segment.get("text", "")).strip()
+        action_type = prediction.on_ball_action_type
+        if action_type in {"carry", "carry_pass"}:
+            action_type = "pass"
+            if prediction.pass_intent is None:
+                prediction.pass_intent = "safe_recycle"
+
         event = {
             "event_id": f"{match_id}-{counter}",
             "match_id": match_id,
@@ -230,7 +236,7 @@ def _build_events_from_predictions(
             "first_touch_result": prediction.first_touch_result,
             "possession_after_touch": None,
             "maintained_possession_bool": None,
-            "on_ball_action_type": prediction.on_ball_action_type,
+            "on_ball_action_type": action_type,
             "touch_count_before_action": prediction.touch_count_before_action,
             "carry_flag": prediction.carry_flag,
             "pass_intent": prediction.pass_intent,
