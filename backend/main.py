@@ -10,6 +10,7 @@ from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from openai import APIConnectionError, OpenAI, OpenAIError, RateLimitError
 
+from .db import init_db, save_processing_result
 from .parser import parse_transcript_segments
 
 load_dotenv()
@@ -31,6 +32,7 @@ def get_transcription_model() -> str:
 
 
 client = OpenAI()
+init_db()
 
 
 @app.post("/upload-audio")
@@ -105,6 +107,21 @@ async def upload_audio(
         "events_csv_file": csv_filename,
         "events_csv_download_url": f"/events/{csv_filename}" if csv_filename else None,
     }
+
+    save_processing_result(
+        match_key=match_id,
+        period=period,
+        team=team,
+        narrator=narrator,
+        audio_filename=audio.filename,
+        transcript_text=transcript_text,
+        timestamped_transcript_text=timestamped_transcript,
+        transcript_file_path=(
+            str(TRANSCRIPTS_DIR / transcript_filename) if transcript_filename else None
+        ),
+        events_csv_path=str(EVENTS_DIR / csv_filename) if csv_filename else None,
+        events=events,
+    )
 
     return JSONResponse(content=payload)
 

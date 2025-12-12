@@ -1,0 +1,11 @@
+.git
+.venv
+__pycache__
+*.pyc
+generated_transcripts
+generated_events
+data
+*.db
+.env
+*.sqlite
+*.log

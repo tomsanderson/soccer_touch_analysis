@@ -91,6 +91,25 @@ The response returns the raw transcript text and echoes the metadata you provide
 
 ---
 
+## Data Persistence
+
+- Parsed data is stored in a lightweight SQLite database at `data/app.db` (configurable via `DATABASE_PATH`).
+- Timestamped transcript `.txt` files and events `.csv` files live in `generated_transcripts/` and `generated_events/` for easy auditing.
+- These directories are ignored by git so local runs stay clean but can be mounted/preserved when running in Docker.
+
+---
+
+## Docker
+
+Build and run the API in an isolated container:
+
+```bash
+docker build -t soccer-touch-analysis .
+docker run --env-file .env -p 8000:8000 soccer-touch-analysis
+```
+
+Bind-mount the `data/`, `generated_transcripts/`, and `generated_events/` directories if you want host-side persistence.
+
 ## Roadmap & Ideas
 
 - Validate the full end-to-end workflow with real 10-minute narrations (Alpha 2 milestone).
