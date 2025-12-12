@@ -486,11 +486,34 @@ def _split_segment_text(text: str) -> List[str]:
         return []
     sentences = re.split(r"(?<=[.!?])\s+", stripped)
     fragments: List[str] = []
+    connectors = (
+        "through ball",
+        "completed to",
+        "intercepted",
+        "wins it back",
+        "safe recycle",
+        "line breaking",
+        "switch of play",
+        "service into box",
+        "token pressure",
+        "immediate press",
+        "track runner",
+        "no effect",
+        "negative effect",
+        "on target",
+        "off target",
+        "blocked",
+        "out for",
+    )
     for candidate in sentences:
         cleaned = candidate.strip()
         if not cleaned:
             continue
-        fragments.append(cleaned)
+        lower = cleaned.lower()
+        if fragments and lower.startswith(connectors):
+            fragments[-1] = f"{fragments[-1].rstrip('. ')} {cleaned}"
+        else:
+            fragments.append(cleaned)
     return fragments
 
 

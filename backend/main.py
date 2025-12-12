@@ -87,8 +87,12 @@ async def upload_audio(
 
     transcript_text = transcript_response.text
     segments = _extract_transcript_segments(transcript_response, transcript_text)
-    events = parse_transcript_segments(
-        segments, match_id=match_id, period=period, offset_seconds=0.0
+    events, parser_used = parse_transcript_segments(
+        segments,
+        match_id=match_id,
+        period=period,
+        offset_seconds=0.0,
+        client=client,
     )
     timestamped_transcript = _format_timestamped_transcript(segments)
     csv_payload = _serialize_events_to_csv(events)
@@ -112,6 +116,7 @@ async def upload_audio(
         ),
         "events_csv_file": csv_filename,
         "events_csv_download_url": f"/events/{csv_filename}" if csv_filename else None,
+        "parser_used": parser_used,
     }
 
     save_processing_result(

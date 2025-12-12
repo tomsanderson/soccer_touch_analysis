@@ -1,6 +1,7 @@
 import json
+import logging
 import os
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Tuple
 
 from openai import OpenAI, OpenAIError
 
@@ -103,19 +104,21 @@ def parse_transcript_segments(
     period: str,
     offset_seconds: float = 0.0,
     client: OpenAI,
-) -> List[Dict[str, Any]]:
+) -> Tuple[List[Dict[str, Any]], str]:
     """
     Attempt to parse narration with the LLM. If unavailable or the response is invalid, fall back to the rule parser.
     """
     structure_model = os.getenv(STRUCTURE_MODEL_ENV)
     api_key = os.getenv("OPENAI_API_KEY")
     if not client or not api_key or not structure_model:
-        return rule_parser.parse_transcript_segments(
+        logging.info("LLM parser disabled or misconfigured; using rule parser.")
+        events = rule_parser.parse_transcript_segments(
             segments,
             match_id=match_id,
             period=period,
             offset_seconds=offset_seconds,
         )
+        return events, "rule"
 
     try:
         predictions = _request_predictions(
@@ -132,14 +135,17 @@ def parse_transcript_segments(
             period=period,
             offset_seconds=offset_seconds,
         )
-        return events
-    except (OpenAIError, LLMParsingError, ValueError, json.JSONDecodeError):
-        return rule_parser.parse_transcript_segments(
+        logging.info("LLM parser successfully produced %s events.", len(events))
+        return events, "llm"
+    except (OpenAIError, LLMParsingError, ValueError, json.JSONDecodeError) as exc:
+        logging.warning("LLM parser failed, falling back to rule parser: %s", exc)
+        events = rule_parser.parse_transcript_segments(
             segments,
             match_id=match_id,
             period=period,
             offset_seconds=offset_seconds,
         )
+        return events, "rule"
 
 
 def _request_predictions(
