@@ -99,6 +99,7 @@ The response returns the raw transcript text and echoes the metadata you provide
 - These directories are ignored by git so local runs stay clean but can be mounted/preserved when running in Docker.
 - Read/write APIs:
   - `POST /upload-audio` – process narration (existing flow).
+  - `POST /chunks/decompose` – feed a narration chunk + time window to the V2 LLM parser and receive structured events (no storage yet).
   - `GET /uploads` – list recent uploads with metadata and download paths.
   - `GET /uploads/{id}` – fetch transcript, timestamped transcript, and event list for one upload.
   - `GET /matches/{match_id}/events?period=1` – pull every stored event for a specific match (and period, if supplied).

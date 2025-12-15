@@ -13,6 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Read-only REST endpoints to list uploads, fetch upload details, and retrieve stored match events.
 - LLM-driven parser (`STRUCTURE_MODEL`) with automatic fallback to the legacy grammar parser, plus documented prompt/example and narration test scripts.
 - `uploads` table now records `parser_used` and `event_count` for auditing which parsing path handled each run.
+- V2 chunk decomposition pipeline (`POST /chunks/decompose`) that accepts narration windows and returns LLM-structured events without touching `/upload-audio`.
 
 ## [v1.0.0] - 2025-12-12
 

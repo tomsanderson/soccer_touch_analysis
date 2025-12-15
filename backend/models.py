@@ -1,4 +1,4 @@
-from typing import Literal, Optional
+from typing import Any, Dict, List, Literal, Optional
 
 from pydantic import BaseModel, Field, validator
 
@@ -102,3 +102,46 @@ class LLMEventPrediction(BaseModel):
         if isinstance(value, str):
             return value.strip()
         return value
+
+
+class NarrationChunkIn(BaseModel):
+    match_id: str
+    period: str
+    video_start_s: float = Field(..., ge=0)
+    video_end_s: float = Field(..., gt=0)
+    transcript_text: str
+    team_context: Optional[str] = None
+
+    @validator("video_end_s")
+    def _end_after_start(cls, value: float, values: Dict[str, Any]) -> float:
+        start = values.get("video_start_s")
+        if start is not None and value <= start:
+            raise ValueError("video_end_s must be greater than video_start_s")
+        return value
+
+
+class DecomposedEvent(BaseModel):
+    event_type: Optional[str] = None
+    team: Optional[str] = None
+    player_name: Optional[str] = None
+    player_jersey_number: Optional[str] = None
+    approximate_time_s: Optional[float] = None
+    source_phrase: Optional[str] = None
+
+    # Optional schema-aligned fields
+    first_touch_quality: Optional[str] = None
+    first_touch_result: Optional[str] = None
+    on_ball_action_type: Optional[str] = None
+    touch_count_before_action: Optional[str] = None
+    pass_intent: Optional[str] = None
+    action_outcome_team: Optional[str] = None
+    action_outcome_detail: Optional[str] = None
+    post_loss_behaviour: Optional[str] = None
+    post_loss_outcome: Optional[str] = None
+    post_loss_effort_intensity: Optional[str] = None
+    extra_fields: Optional[Dict[str, Any]] = None
+
+
+class DecomposeResponse(BaseModel):
+    events: List[DecomposedEvent]
+    raw_response: Optional[Dict[str, Any]] = None

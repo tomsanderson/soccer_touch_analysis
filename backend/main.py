@@ -9,7 +9,9 @@ from dotenv import load_dotenv
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from openai import APIConnectionError, OpenAI, OpenAIError, RateLimitError
+from pydantic import ValidationError
 
+from .chunk_parser import decompose_chunk as llm_decompose_chunk
 from .db import (
     get_upload,
     init_db,
@@ -18,6 +20,7 @@ from .db import (
     save_processing_result,
 )
 from .llm_parser import parse_transcript_segments
+from .models import DecomposeResponse, NarrationChunkIn
 
 load_dotenv()
 
@@ -136,6 +139,24 @@ async def upload_audio(
     )
 
     return JSONResponse(content=payload)
+
+
+@app.post("/chunks/decompose", response_model=DecomposeResponse)
+async def decompose_chunk_endpoint(chunk: NarrationChunkIn):
+    try:
+        events, raw = llm_decompose_chunk(client, chunk)
+        return DecomposeResponse(events=events, raw_response=raw)
+    except ValidationError as exc:
+        return JSONResponse(
+            status_code=422,
+            content={
+                "error": exc.errors(),
+                "parsed_events": [event.dict() for event in events] if "events" in locals() else [],
+                "raw_response": raw if "raw" in locals() else None,
+            },
+        )
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
 
 
 @app.get("/uploads")
