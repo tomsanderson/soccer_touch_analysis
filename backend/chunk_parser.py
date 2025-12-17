@@ -1,42 +1,41 @@
 import json
 import os
-from typing import Any, Dict, List, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 from openai import OpenAI
 from pydantic import ValidationError
 
+from .json_utils import extract_json_object
 from .models import DecomposedEvent, DecomposeResponse, NarrationChunkIn
 
 STRUCTURE_MODEL_ENV = "STRUCTURE_MODEL"
 
 SYSTEM_PROMPT = """You are an analyst that converts natural-language soccer narration into structured events.
-Given a narration chunk and its video time window, identify every meaningful soccer event and map it to the schema.
+Narration is relaxed, reflective, and may bundle multiple events. Your job is to extract each soccer event and map it to the schema.
 
-Output strictly valid JSON with this format:
+Output strictly valid JSON with this format: {"events": []}
+Populate the events array with objects shaped like:
 {
-  "events": [
-    {
-      "event_type": "...",
-      "team": "...",
-      "player_name": "...",
-      "player_jersey_number": "...",
-      "approximate_time_s": <float seconds within the provided window>,
-      "source_phrase": "...",
-      "first_touch_quality": "...",
-      "on_ball_action_type": "...",
-      "action_outcome_detail": "...",
-      "post_loss_behaviour": "...",
-      ...
-    }
-  ]
+  "event_type": "...",
+  "team": "...",
+  "player_name": "...",
+  "player_jersey_number": "...",
+  "approximate_time_s": <float seconds within the provided window>,
+  "source_phrase": "...",
+  "first_touch_quality": "...",
+  "on_ball_action_type": "...",
+  "action_outcome_detail": "...",
+  "post_loss_behaviour": "...",
+  ...
 }
 
 Guidelines:
-- Narration is conversational; you infer structure.
-- Use the provided window [video_start_s, video_end_s] to estimate timestamps. It's acceptable to leave approximate_time_s null if the narration is too vague.
+- Narration is conversational; you infer structure (no rigid grammar required).
+- Use the provided window [video_start_s, video_end_s] to estimate timestamps only when confident. Leave approximate_time_s null if unsure.
 - Retain the relevant snippet of narration for source_phrase.
 - Include any schema-aligned fields you can infer (first touch qualities, pass intent, outcomes, reactions). Leave fields absent or null if unknown.
 - Order events chronologically.
+- Add an optional "inference_confidence" field set to "low", "medium", or "high" based on certainty.
 - If the narration contains no soccer events, return {"events": []}.
 """
 
@@ -96,7 +95,7 @@ EXAMPLE_OUTPUT = {
 
 def decompose_chunk(
     client: OpenAI, chunk: NarrationChunkIn
-) -> Tuple[List[DecomposedEvent], Dict[str, Any]]:
+) -> Tuple[List[DecomposedEvent], Optional[Dict[str, Any]], Optional[Dict[str, str]], str]:
     """
     Send a narration chunk to the LLM and return structured events plus raw JSON.
     """
@@ -119,11 +118,13 @@ def decompose_chunk(
         ],
     )
     raw_text = _extract_response_text(response)
-    raw_json = json.loads(raw_text)
-    events_data = raw_json.get("events", [])
+    raw_json, parse_error = extract_json_object(raw_text)
+    if parse_error:
+        return [], None, parse_error, raw_text
 
+    events_data = raw_json.get("events", [])
     events = [DecomposedEvent(**item) for item in events_data]
-    return events, raw_json
+    return events, raw_json, None, raw_text
 
 
 def _extract_response_text(response: Any) -> str:
@@ -134,7 +135,7 @@ def _extract_response_text(response: Any) -> str:
     raise ValueError("LLM response did not contain textual content.")
 
 
-def validate_response(events: List[DecomposedEvent], raw: Dict[str, Any]) -> DecomposeResponse:
+def validate_response(events: List[DecomposedEvent], raw: Optional[Dict[str, Any]]) -> DecomposeResponse:
     try:
         return DecomposeResponse(events=events, raw_response=raw)
     except ValidationError as exc:

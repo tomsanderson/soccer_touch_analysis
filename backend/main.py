@@ -1,6 +1,8 @@
 import csv
 import io
+import json
 import os
+import time
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 from uuid import uuid4
@@ -13,14 +15,29 @@ from pydantic import ValidationError
 
 from .chunk_parser import decompose_chunk as llm_decompose_chunk
 from .db import (
+    create_narration_chunk,
+    get_chunk_with_latest_decomposition,
     get_upload,
     init_db,
+    insert_chunk_decomposition,
+    insert_sb_raw_file,
+    insert_v2_events,
     list_events_for_match,
     list_uploads,
+    list_v2_events_for_match,
+    replace_sb_events,
     save_processing_result,
+    update_narration_chunk_status,
+    upsert_sb_match,
 )
 from .llm_parser import parse_transcript_segments
-from .models import DecomposeResponse, NarrationChunkIn
+from .models import (
+    DecomposedEvent,
+    DecomposeResponse,
+    NarrationChunkIn,
+    StatsBombMatchProjectionIn,
+    StatsBombRawIn,
+)
 
 load_dotenv()
 
@@ -141,21 +158,90 @@ async def upload_audio(
     return JSONResponse(content=payload)
 
 
+CHUNK_PROMPT_VERSION = "v2-m0"
+
+
 @app.post("/chunks/decompose", response_model=DecomposeResponse)
 async def decompose_chunk_endpoint(chunk: NarrationChunkIn):
+    events: List[DecomposedEvent] = []
+    raw: Optional[Dict[str, Any]] = None
+    raw_text: str = ""
+    parse_error: Optional[Dict[str, str]] = None
+    chunk_period = str(chunk.period) if chunk.period is not None else "unknown"
+    chunk_id = create_narration_chunk(
+        match_id=chunk.match_id,
+        period=chunk_period,
+        video_start_s=chunk.video_start_s,
+        video_end_s=chunk.video_end_s,
+        transcript_text=chunk.transcript_text,
+        team_context=chunk.team_context,
+        status="processing",
+    )
+    decomposition_id: Optional[int] = None
     try:
-        events, raw = llm_decompose_chunk(client, chunk)
-        return DecomposeResponse(events=events, raw_response=raw)
+        start_time = time.perf_counter()
+        events, raw, parse_error, raw_text = llm_decompose_chunk(client, chunk)
+        latency_ms = int((time.perf_counter() - start_time) * 1000)
+        parse_ok = parse_error is None
+        parsed_json_text = json.dumps(raw) if raw is not None else None
+        error_json_text = json.dumps(parse_error) if parse_error else None
+        model_name = os.getenv("STRUCTURE_MODEL")
+        decomposition_id = insert_chunk_decomposition(
+            chunk_id=chunk_id,
+            schema_version="v2",
+            prompt_version=CHUNK_PROMPT_VERSION,
+            model=model_name,
+            raw_llm_text=raw_text,
+            parsed_json=parsed_json_text,
+            parse_ok=parse_ok,
+            error_json=error_json_text,
+            latency_ms=latency_ms,
+            cost_usd=None,
+        )
+        update_narration_chunk_status(chunk_id, "processed" if parse_ok else "error")
+
+        if parse_ok and events:
+            insert_v2_events(
+                chunk_id=chunk_id,
+                decomposition_id=decomposition_id,
+                events=[event.dict() for event in events],
+            )
+
+        if parse_error:
+            return JSONResponse(
+                status_code=422,
+                content={
+                    "chunk_id": chunk_id,
+                    "decomposition_id": decomposition_id,
+                    "error": {
+                        "type": "llm_parse_error",
+                        "message": parse_error.get("parse_error"),
+                    },
+                    "raw_response": parse_error.get("raw_text"),
+                    "parsed_events": [],
+                },
+            )
+
+        return DecomposeResponse(
+            events=events,
+            raw_response=raw,
+            chunk_id=chunk_id,
+            decomposition_id=decomposition_id,
+        )
     except ValidationError as exc:
+        update_narration_chunk_status(chunk_id, "error")
         return JSONResponse(
             status_code=422,
             content={
+                "chunk_id": chunk_id,
+                "decomposition_id": decomposition_id,
                 "error": exc.errors(),
-                "parsed_events": [event.dict() for event in events] if "events" in locals() else [],
-                "raw_response": raw if "raw" in locals() else None,
+                "parsed_events": [event.dict() for event in events],
+                "raw_response": raw,
             },
         )
     except Exception as exc:
+        update_narration_chunk_status(chunk_id, "error")
         raise HTTPException(status_code=500, detail=str(exc))
 
 
@@ -178,6 +264,54 @@ async def get_upload_details(upload_id: int):
 async def get_match_events(match_id: str, period: Optional[str] = None):
     events = list_events_for_match(match_key=match_id, period=period)
     return JSONResponse(content={"events": events})
+
+
+@app.get("/matches/{match_id}/v2-events")
+async def get_match_v2_events(match_id: str, period: Optional[str] = None):
+    events = list_v2_events_for_match(match_key=match_id, period=period)
+    return JSONResponse(content={"events": events})
+
+
+@app.get("/chunks/{chunk_id}")
+async def get_chunk_details(chunk_id: int):
+    record = get_chunk_with_latest_decomposition(chunk_id)
+    if not record:
+        raise HTTPException(status_code=404, detail="Chunk not found.")
+    return JSONResponse(content=record)
+
+
+@app.post("/statsbomb/raw")
+async def ingest_statsbomb_raw(payload: StatsBombRawIn):
+    raw_id = insert_sb_raw_file(
+        source=payload.source,
+        file_type=payload.file_type,
+        external_id=payload.external_id,
+        schema_version=payload.schema_version,
+        raw_json=payload.payload,
+    )
+    return JSONResponse(content={"raw_file_id": raw_id})
+
+
+@app.post("/statsbomb/matches/{match_id}/projection")
+async def ingest_statsbomb_projection(match_id: int, body: StatsBombMatchProjectionIn):
+    match_payload = dict(body.match)
+    match_payload.setdefault("match_id", match_id)
+    stored_match_id = upsert_sb_match(match_payload)
+    replace_sb_events(match_id=stored_match_id, events=body.events)
+    if body.source:
+        insert_sb_raw_file(
+            source=body.source,
+            file_type="match_projection",
+            external_id=str(match_id),
+            schema_version=body.schema_version,
+            raw_json={"match": match_payload, "events": body.events},
+        )
+    return JSONResponse(
+        content={
+            "match_id": stored_match_id,
+            "event_count": len(body.events),
+        }
+    )
 
 
 CSV_FIELDS = [
