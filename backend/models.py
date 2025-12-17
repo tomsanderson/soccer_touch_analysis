@@ -106,7 +106,7 @@ class LLMEventPrediction(BaseModel):
 
 class NarrationChunkIn(BaseModel):
     match_id: str
-    period: str
+    period: Optional[int] = None
     video_start_s: float = Field(..., ge=0)
     video_end_s: float = Field(..., gt=0)
     transcript_text: str
@@ -127,6 +127,7 @@ class DecomposedEvent(BaseModel):
     player_jersey_number: Optional[str] = None
     approximate_time_s: Optional[float] = None
     source_phrase: Optional[str] = None
+    inference_confidence: Optional[Literal["low", "medium", "high"]] = None
 
     # Optional schema-aligned fields
     first_touch_quality: Optional[str] = None
@@ -145,3 +146,20 @@ class DecomposedEvent(BaseModel):
 class DecomposeResponse(BaseModel):
     events: List[DecomposedEvent]
     raw_response: Optional[Dict[str, Any]] = None
+    chunk_id: Optional[int] = None
+    decomposition_id: Optional[int] = None
+
+
+class StatsBombRawIn(BaseModel):
+    source: str
+    file_type: str
+    external_id: Optional[str] = None
+    schema_version: Optional[str] = None
+    payload: Dict[str, Any]
+
+
+class StatsBombMatchProjectionIn(BaseModel):
+    match: Dict[str, Any]
+    events: List[Dict[str, Any]] = []
+    source: Optional[str] = None
+    schema_version: Optional[str] = None

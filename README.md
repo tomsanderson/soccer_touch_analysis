@@ -5,7 +5,7 @@ A small personal app to turn **spoken narration of soccer games** into a **struc
 - Input: Voice recording (e.g., iPhone Voice Memos) of you narrating what happens in the game.
 - Processing:
   1. Transcribe audio with the OpenAI Audio API.
-  2. Convert the transcript into structured events with an OpenAI LLM (JSON output), falling back to the legacy grammar parser if needed.
+  2. For the `/upload-audio` endpoint, run the **V1 strict pipeline** (segment-based parser + CSV + persistence). For `/chunks/decompose`, run the **V2 chunk pipeline** (natural-language narration chunk → LLM decomposition, no storage).
 - Output: CSV/JSON with a **StatsBomb-inspired event schema**, focused on:
   - First-touch quality and outcome  
   - What the player does with the ball  
@@ -30,9 +30,8 @@ This is **Version 1** of both the schema and the narration grammar. The goal is 
 **Planned V1 architecture:**
 
 - **Backend** (Python, FastAPI)
-  - Endpoint to upload an audio file + some metadata.
-  - Calls OpenAI Audio transcription API (model name configurable).
-  - Sends the transcript + segment metadata to an OpenAI text model that emits StatsBomb-style JSON events (optionally falling back to the strict grammar parser when no model/keys are configured).
+  - `/upload-audio` (V1 strict mode) uploads an audio file, transcribes it, and runs the original strict parser (LLM + regex fallback) to emit CSV + persisted events.
+  - `/chunks/decompose` (V2 chunk mode) accepts narration text + a video window and asks the V2 LLM parser to infer events from natural language (no rigid grammar, no persistence).
   - Returns:
     - CSV download containing all events.
     - Optionally JSON for UI.
@@ -98,8 +97,8 @@ The response returns the raw transcript text and echoes the metadata you provide
 - Timestamped transcript `.txt` files and events `.csv` files live in `generated_transcripts/` and `generated_events/` for easy auditing.
 - These directories are ignored by git so local runs stay clean but can be mounted/preserved when running in Docker.
 - Read/write APIs:
-  - `POST /upload-audio` – process narration (existing flow).
-  - `POST /chunks/decompose` – feed a narration chunk + time window to the V2 LLM parser and receive structured events (no storage yet).
+  - `POST /upload-audio` – **V1 strict pipeline**: transcribe, parse segments, emit CSV, persist to SQLite, and return transcript + structured events.
+  - `POST /chunks/decompose` – **V2 chunk pipeline**: send a narration chunk + time window to the LLM decomposer; returns structured events without touching storage.
   - `GET /uploads` – list recent uploads with metadata and download paths.
   - `GET /uploads/{id}` – fetch transcript, timestamped transcript, and event list for one upload.
   - `GET /matches/{match_id}/events?period=1` – pull every stored event for a specific match (and period, if supplied).
@@ -108,10 +107,23 @@ The response returns the raw transcript text and echoes the metadata you provide
 
 ## LLM Parser
 
-- The primary parser now calls an OpenAI text model (see `STRUCTURE_MODEL`) to translate transcript segments into structured JSON events. The prompt lives in `backend/llm_parser.py` along with a few-shot example.
+- The `/upload-audio` path (V1) still calls the V1 parser in `backend/llm_parser.py`. It expects relatively structured segments and falls back to the legacy grammar parser for reliability.
+- The V2 chunk parser lives in `backend/chunk_parser.py` and accepts natural-language narration chunks (aligned to time windows) without any rigid grammar.
 - Each event returned by the model includes the original source phrase plus the StatsBomb-style attributes (e.g., `first_touch_quality`, `action_outcome_detail`). The backend assigns IDs, timestamps, and persists the rows.
 - If an API key or `STRUCTURE_MODEL` is missing—or the call fails—we automatically fall back to the deterministic grammar parser in `backend/parser.py`, ensuring unit tests and offline runs keep working.
 - Example narration scripts live in `docs/test_scripts/` for repeatable round-trip tests.
+
+## V1 Strict Mode vs V2 Chunk Mode
+
+- **V1 strict mode (`POST /upload-audio`)**
+  - Input: `.m4a` upload + form metadata.
+  - Flow: Transcribe audio, process each transcript segment via the V1 LLM + regex fallback, emit CSV, persist transcript/events to SQLite.
+  - Expectation: Works well when narration roughly follows the original structured grammar.
+
+- **V2 chunk mode (`POST /chunks/decompose`)**
+  - Input: JSON chunk containing match metadata, a narration window, and natural-language narration text.
+  - Flow: Send the chunk to the V2 semantic decomposer (`backend/chunk_parser.py`), which infers events from conversational narration. Returns events only (no file writing / persistence).
+  - Expectation: Designed for slow, reflective narration aligned to time windows (see `docs/Functional_Requirements_V2.md`).
 
 ---
 

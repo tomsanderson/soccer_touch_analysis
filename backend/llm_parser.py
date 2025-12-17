@@ -6,6 +6,7 @@ from typing import Any, Dict, List, Tuple
 from openai import OpenAI, OpenAIError
 
 from . import parser as rule_parser
+from .json_utils import extract_json_object
 from .models import LLMEventPrediction
 
 STRUCTURE_MODEL_ENV = "STRUCTURE_MODEL"
@@ -174,7 +175,9 @@ def _request_predictions(
         ],
     )
     content = _extract_response_text(response)
-    data = json.loads(content)
+    data, parse_error = extract_json_object(content)
+    if parse_error:
+        raise LLMParsingError(parse_error.get("parse_error", "Failed to parse LLM output."))
     events_data = data.get("events", [])
 
     predictions: List[LLMEventPrediction] = []
@@ -211,8 +214,6 @@ def _build_events_from_predictions(
         action_type = prediction.on_ball_action_type
         if action_type in {"carry", "carry_pass"}:
             action_type = "pass"
-            if prediction.pass_intent is None:
-                prediction.pass_intent = "safe_recycle"
 
         event = {
             "event_id": f"{match_id}-{counter}",
@@ -239,7 +240,6 @@ def _build_events_from_predictions(
             "on_ball_action_type": action_type,
             "touch_count_before_action": prediction.touch_count_before_action,
             "carry_flag": prediction.carry_flag,
-            "pass_intent": prediction.pass_intent,
             "action_outcome_team": prediction.action_outcome_team,
             "action_outcome_detail": prediction.action_outcome_detail,
             "next_possession_team": prediction.next_possession_team,
@@ -249,6 +249,8 @@ def _build_events_from_predictions(
             "post_loss_outcome": prediction.post_loss_outcome,
             "post_loss_disruption_rating": None,
         }
+        if prediction.pass_intent is not None:
+            event["pass_intent"] = prediction.pass_intent
         events.append(event)
     return events
 
